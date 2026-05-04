@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NASCAR Pricer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏁</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -155,11 +156,11 @@ input[type=number]:focus{border-color:var(--blue-dim);}
 .band-val{font-size:10px;color:var(--muted);width:36px;flex-shrink:0;text-align:right;}
 .divider-line{height:1px;background:var(--line);margin-bottom:14px;}
 .odds-table{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--line);border-radius:var(--radius);overflow:hidden;}
-.odds-cell{background:var(--bg0);padding:8px 10px;opacity:.7;}
-.odds-cell-top{background:var(--bg3);opacity:1;}
+.odds-cell{background:var(--bg2);padding:8px 10px;}
+.odds-cell-top{background:var(--bg3);}
 .oc-lbl{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;}
-.oc-val{font-size:13px;font-weight:600;color:var(--bright);}
-.oc-val.marginated{font-weight:400;color:var(--dim);font-size:12px;}
+.oc-val{font-size:13px;font-weight:400;color:var(--muted);}
+.oc-val.marginated{font-weight:700;color:var(--bright);font-size:13px;}
 .vs-divider{display:flex;align-items:center;gap:12px;margin:8px 0;}
 .vs-line{flex:1;height:1px;background:var(--line);}
 .vs-text{font-size:10px;color:var(--dim);letter-spacing:.12em;text-transform:uppercase;}
@@ -194,6 +195,23 @@ input[type=number]:focus{border-color:var(--blue-dim);}
   .content{padding:16px;}
   .topbar{padding:12px 16px;}
 }
+
+
+/* ── segmented control ───────────────────────────────────── */
+.seg-ctrl{display:inline-flex;background:var(--bg2);border:1px solid var(--line);border-radius:5px;padding:2px;gap:2px;}
+.seg-btn{padding:4px 12px;font-size:11px;font-family:var(--mono);border:none;border-radius:3px;background:transparent;color:var(--dim);cursor:pointer;transition:all .12s;letter-spacing:.02em;white-space:nowrap;}
+.seg-btn:hover{color:var(--muted);}
+.seg-btn.on{background:var(--bg4);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.4);}
+
+/* ── race car loader ─────────────────────────────────────── */
+.sim-loader{display:none;margin-top:16px;background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;}
+.sim-loader.active{display:block;}
+.track{height:2px;background:var(--line);border-radius:2px;margin-bottom:12px;position:relative;overflow:hidden;}
+.track-fill{height:100%;background:linear-gradient(90deg,var(--blue),#a78bfa);border-radius:2px;transition:width .1s linear;width:0%;}
+.car-wrap{position:relative;height:34px;}
+.car-track-line{position:absolute;bottom:6px;left:0;right:0;height:1px;border-top:1px dashed var(--line2);}
+.racecar{position:absolute;bottom:2px;left:0;font-size:24px;line-height:1;transition:left .1s linear;transform:scaleX(-1);filter:drop-shadow(0 0 8px rgba(79,142,247,.7));}
+.sim-loader-label{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:8px;}
 
 </style>
 </head>
@@ -267,17 +285,28 @@ input[type=number]:focus{border-color:var(--blue-dim);}
           </div></div>
         <textarea id="oddsIn" placeholder="Tyler Reddick&#9;5.8&#9;2.5&#9;1.833&#9;1.303&#10;Denny Hamlin&#9;6.2&#9;2.7&#9;1.909&#9;1.333&#10;..."></textarea>
         <div id="orStrip" class="or-strip" style="display:none"></div>
-        <div class="btn-row">
-          <button class="btn btn-primary" id="simBtn" onclick="runSim()">
-            Run 1,000,000 Simulations
-          </button>
-        </div>
-        <div id="progWrap" class="prog-wrap">
-          <div class="prog-header">
-            <span id="progLabel">Initialising…</span>
-            <span id="progPct">0%</span>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <span style="font-size:11px;color:var(--dim);font-family:var(--mono);">Simulations</span>
+          <div class="seg-ctrl">
+            <button class="seg-btn" data-n="100000"  onclick="setSimCount(100000)">100k</button>
+            <button class="seg-btn on"  data-n="1000000" onclick="setSimCount(1000000)">1M</button>
+            <button class="seg-btn" data-n="5000000" onclick="setSimCount(5000000)">5M</button>
           </div>
-          <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+          <span style="font-size:10px;color:var(--dim);font-family:var(--mono);" id="simCountNote">~25s</span>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="simBtn" onclick="handleSimClick()">
+            Run <span id="simBtnLabel">1,000,000</span> Simulations
+          </button>
+          <button class="btn btn-ghost" id="clearBtn" onclick="clearSim()" style="display:none;">Clear results</button>
+        </div>
+        <div id="simLoader" class="sim-loader">
+          <div class="track"><div class="track-fill" id="trackFill"></div></div>
+          <div class="car-wrap">
+            <div class="car-track-line"></div>
+            <div class="racecar" id="raceCar">🏎️</div>
+          </div>
+          <div class="sim-loader-label"><span id="loaderLabel">Starting…</span><span id="loaderPct">0%</span></div>
         </div>
         <div id="statusEl" class="status"></div>
       </div>
@@ -353,7 +382,45 @@ input[type=number]:focus{border-color:var(--blue-dim);}
 // ─────────────────────────────────────────────────────────────
 // Constants & state
 // ─────────────────────────────────────────────────────────────
-const NSIM=1000000, CHUNK=5000;
+const CHUNK=5000;
+let NSIM=1000000;
+
+function setSimCount(n){
+  NSIM=n;
+  document.querySelectorAll('.seg-btn[data-n]').forEach(b=>b.classList.toggle('on',+b.dataset.n===n));
+  document.getElementById('simBtnLabel').textContent=n>=1000000?(n/1000000)+'M':(n/1000)+'k';
+  const notes={100000:'~3s',1000000:'~25s',5000000:'~2min'};
+  document.getElementById('simCountNote').textContent=notes[n]||'';
+}
+
+function clearSim(){
+  if(!confirm('Clear current results and reset?')) return;
+  beatMatrix=null; drivers=[]; h2hSel=[]; grpSel=[]; fieldN=0;
+  document.getElementById('h2h-body').innerHTML='<div class="empty"><div class="empty-icon">⚡</div><div class="empty-title">No simulation data</div><div class="empty-desc">Paste odds and run the simulator on the Input tab first.</div></div>';
+  document.getElementById('grp-body').innerHTML='<div class="empty"><div class="empty-icon">⚡</div><div class="empty-title">No simulation data</div><div class="empty-desc">Paste odds and run the simulator on the Input tab first.</div></div>';
+  document.getElementById('clearBtn').style.display='none';
+  document.getElementById('statusEl').textContent='';
+  document.getElementById('statusEl').className='status';
+  document.getElementById('simLoader').classList.remove('active');
+  document.getElementById('field-pill').textContent='No data';
+  document.getElementById('sim-pill').style.display='none';
+}
+
+function handleSimClick(){
+  if(beatMatrix){
+    if(!confirm('Re-running will overwrite current results. Continue?')) return;
+  }
+  runSim();
+}
+
+function setVig(tab, v){
+  if(tab==='h2h'){h2hVig=v;renderH2H();}
+  else{grpVig=v;renderGroup();}
+}
+function updateVigPresets(tab, v){
+  // presets re-render anyway, no-op needed
+}
+
 const clamp=p=>Math.min(.9999,Math.max(1e-6,p));
 const MAX_RISE=1.4;
 
@@ -610,18 +677,15 @@ function runSim(){
   }
 
   const simBtn=document.getElementById('simBtn');
-  const progWrap=document.getElementById('progWrap');
-  const progFill=document.getElementById('progFill');
-  const progLabel=document.getElementById('progLabel');
-  const progPct=document.getElementById('progPct');
   const simPill=document.getElementById('sim-pill');
   const fieldPill=document.getElementById('field-pill');
 
   simBtn.disabled=true;
-  progWrap.style.display='block';
-  progFill.style.width='0%';
-  progLabel.textContent='Fitting distributions…';
-  progPct.textContent='0%';
+  document.getElementById('simLoader').classList.add('active');
+  document.getElementById('trackFill').style.width='0%';
+  document.getElementById('raceCar').style.left='0px';
+  document.getElementById('loaderLabel').textContent='Fitting distributions…';
+  document.getElementById('loaderPct').textContent='0%';
   simPill.style.display='flex';
   statusEl.textContent='';statusEl.className='status';
 
@@ -671,9 +735,11 @@ function runSim(){
   simWorker.onmessage=function(e){
     if(e.data.type==='progress'){
       const pct=(e.data.done/e.data.total*100);
-      progFill.style.width=pct.toFixed(0)+'%';
-      progPct.textContent=pct.toFixed(0)+'%';
-      progLabel.textContent=`${(e.data.done/1000).toFixed(0)}k / ${(e.data.total/1000).toFixed(0)}k races`;
+      document.getElementById('trackFill').style.width=pct.toFixed(0)+'%';
+      (function(){const w=document.getElementById('raceCar').parentElement.offsetWidth||400;
+  document.getElementById('raceCar').style.left=Math.max(0,w*(pct/100)-26)+'px';})();
+      document.getElementById('loaderPct').textContent=pct.toFixed(0)+'%';
+      document.getElementById('loaderLabel').textContent=`${(e.data.done/1000).toFixed(0)}k / ${(e.data.total/1000).toFixed(0)}k races`;
     } else if(e.data.type==='done'){
       const bc=new Int32Array(e.data.beat);
       beatMatrix=[];
@@ -682,10 +748,13 @@ function runSim(){
       fieldN=n; h2hSel=[]; grpSel=[];
       simBtn.disabled=false;
       simPill.style.display='none';
-      fieldPill.textContent=`${n} drivers · 1M races`;
-      progFill.style.width='100%';
-      progPct.textContent='100%';
-      progLabel.textContent='Complete';
+      document.getElementById('clearBtn').style.display='';
+      fieldPill.textContent=`${n} drivers · ${NSIM>=1000000?(NSIM/1000000)+'M':(NSIM/1000)+'k'} races`;
+      document.getElementById('trackFill').style.width='100%';
+      (function(){const w=document.getElementById('raceCar').parentElement.offsetWidth||400;
+  document.getElementById('raceCar').style.left=(w-26)+'px';})();
+      document.getElementById('loaderPct').textContent='100%';
+      document.getElementById('loaderLabel').textContent='Complete 🏁';
       statusEl.textContent=`✓  ${n}-driver field · 1,000,000 simulations complete`;
       statusEl.className='status ok';
       simWorker.terminate(); URL.revokeObjectURL(wURL); simWorker=null;
@@ -747,41 +816,324 @@ function buildDisplayPMF(d, n, rank) {
   return pmf;
 }
 
-function sparklineSVG(d, n, rank) {
-  const pmf = buildDisplayPMF(d, n, rank);
-  const W=340, H=52, pad=1;
-  const barW = (W - pad*(n-1)) / n;
-  const maxV = Math.max(...pmf);
-  let top10Bars='', tailBars='';
-  for(let i=0;i<n;i++){
-    const h = Math.max(1, (pmf[i]/maxV) * (H-4));
-    const x = i*(barW+pad);
-    const y = H - h;
-    const bar = `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="0.5"/>`;
-    if(i<10) top10Bars+=bar; else tailBars+=bar;
-  }
-  // Peak marker
-  let pkI=0; for(let i=1;i<n;i++) if(pmf[i]>pmf[pkI]) pkI=i;
-  const pkX = (pkI*(barW+pad) + barW/2).toFixed(1);
-  const ef = Array.from(pmf).reduce((s,p,i)=>s+p*(i+1),0);
 
-  return `<svg class="dist-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <g class="dist-section-tail">${tailBars}</g>
-    <g class="dist-section-top10">${top10Bars}</g>
-    <line class="dist-peak-line" x1="${pkX}" y1="0" x2="${pkX}" y2="${H}" stroke-dasharray="2,2"/>
-  </svg>`;
+// ─────────────────────────────────────────────────────────────
+// Combined smooth area distribution chart
+// ─────────────────────────────────────────────────────────────
+const DRIVER_COLORS = [
+  {line:'#4f8ef7', fill:'rgba(79,142,247,0.15)'},
+  {line:'#3ecf8e', fill:'rgba(62,207,142,0.12)'},
+  {line:'#f5a623', fill:'rgba(245,166,35,0.12)'},
+  {line:'#e0507a', fill:'rgba(224,80,122,0.12)'},
+  {line:'#a78bfa', fill:'rgba(167,139,250,0.12)'},
+  {line:'#38bdf8', fill:'rgba(56,189,248,0.12)'},
+];
+let _distData = {};
+
+function renderDist(driversArr) {
+  const n = fieldN||38;
+  const id = 'dc_' + Date.now();
+  const chartData = driversArr.map((d, ci) => {
+    const pmf = buildDisplayPMF(d, n, d.rank||20);
+    const cdf = new Float64Array(n); cdf[0]=pmf[0];
+    for(let i=1;i<n;i++) cdf[i]=cdf[i-1]+pmf[i];
+    let pkI=0; for(let i=1;i<n;i++) if(pmf[i]>pmf[pkI]) pkI=i;
+    const ef = Array.from(pmf).reduce((s,p,i)=>s+p*(i+1),0).toFixed(1);
+    const col = DRIVER_COLORS[ci % DRIVER_COLORS.length];
+    return {d, pmf:Array.from(pmf), cdf:Array.from(cdf), pk:pkI+1, ef, ...col};
+  });
+  _distData[id] = chartData;
+
+  const legend = chartData.map(({d,pk,ef,line}) =>
+    `<div style="display:flex;align-items:center;gap:7px;">
+      <div style="width:24px;height:2px;background:${line};border-radius:2px;flex-shrink:0;"></div>
+      <span style="color:var(--text);font-size:11px;font-weight:500;">${d.name}</span>
+      <span style="color:var(--dim);font-size:10px;">P${pk} &nbsp;EF ${ef}</span>
+    </div>`
+  ).join('');
+
+  setTimeout(() => initDistChart(id), 60);
+
+  return `<div style="background:var(--bg1);border-top:1px solid var(--line);padding:0 20px 18px;">
+    <div style="border-top:1px solid var(--line);margin-bottom:14px;padding-top:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.12em;">Finish Distribution</span>
+      <span style="font-size:9px;color:var(--dim);">— P(finish=k) &nbsp; <span style="letter-spacing:2px;">╌</span> cumulative</span>
+    </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">${legend}</div>
+    </div>
+    <div style="display:flex;gap:0;align-items:stretch;">
+      <div id="${id}_yaxis" style="width:34px;flex-shrink:0;position:relative;"></div>
+      <div style="flex:1;min-width:0;position:relative;">
+        <canvas id="${id}" style="width:100%;display:block;cursor:crosshair;"
+          onmousemove="distHover(event,'${id}')"
+          onmouseleave="distLeave('${id}')"></canvas>
+        <div id="${id}_xline" style="display:none;position:absolute;top:0;width:1px;background:rgba(255,255,255,0.12);pointer-events:none;"></div>
+        <div id="${id}_tip" style="display:none;position:absolute;top:8px;
+          font-size:11px;color:var(--text);background:var(--bg3);border:1px solid var(--line2);
+          border-radius:6px;padding:8px 12px;pointer-events:none;white-space:nowrap;z-index:10;
+          font-family:var(--mono);line-height:2;box-shadow:0 4px 16px rgba(0,0,0,.5);"></div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-left:34px;margin-top:4px;">
+      ${[1,5,10,15,20,25,30,35,38].map(k=>`<span style="font-size:9px;color:var(--dim);">${k}</span>`).join('')}
+    </div>
+  </div>`;
 }
+
+// Remove border-radius from result-grid cards so dist attaches cleanly
+function wrapWithDist(cardsHtml, driversArr) {
+  return cardsHtml + renderDist(driversArr);
+}
+
+function initDistChart(id) {
+  const canvas = document.getElementById(id);
+  if(!canvas) return;
+  const data = _distData[id];
+  if(!data) return;
+  const W = canvas.parentElement.offsetWidth || 600;
+  const H = 450;
+  const dpr = window.devicePixelRatio||1;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  _distData[id+'_W'] = W;
+  _distData[id+'_H'] = H;
+  // Set crosshair line height
+  const xline = document.getElementById(id+'_xline');
+  if(xline) xline.style.height = H+'px';
+  drawAreaChart(id, ctx, W, H, -1);
+  drawYAxis(id, H);
+  drawCDFAxis(id, H);
+}
+
+function drawYAxis(id, H) {
+  const data = _distData[id];
+  if(!data) return;
+  const maxV = Math.max(...data.flatMap(d=>d.pmf));
+  const yax = document.getElementById(id+'_yaxis');
+  if(!yax) return;
+  yax.style.height = H+'px';
+  yax.style.position = 'relative';
+  const steps = [0, 0.25, 0.5, 0.75, 1.0];
+  yax.innerHTML = steps.map(s => {
+    const pct = (maxV * s * 100).toFixed(1);
+    const bottom = Math.round(s * (H - 4));
+    return `<span style="position:absolute;bottom:${bottom}px;right:6px;font-size:8.5px;color:var(--dim);line-height:1;">${pct}%</span>`;
+  }).join('');
+}
+
+function drawCDFAxis(id, H) {
+  // Right-side axis for CDF (0-100%)
+  const canvas = document.getElementById(id);
+  if(!canvas) return;
+  // We'll overlay a right-axis div
+  let rax = document.getElementById(id+'_raxis');
+  if(!rax){
+    rax = document.createElement('div');
+    rax.id = id+'_raxis';
+    rax.style.cssText = 'position:absolute;right:-32px;top:0;width:30px;height:'+H+'px;pointer-events:none;';
+    canvas.parentElement.style.position='relative';
+    canvas.parentElement.appendChild(rax);
+  }
+  rax.style.height = H+'px';
+  const PAD_T=8, PAD_B=4, chartH=H-PAD_T-PAD_B;
+  const steps=[0,0.25,0.5,0.75,1.0];
+  rax.innerHTML = steps.map(s=>{
+    const bottom = Math.round(s*chartH);
+    return `<span style="position:absolute;bottom:${bottom+PAD_B}px;left:4px;font-size:8.5px;color:rgba(255,255,255,0.2);line-height:1;">${(s*100).toFixed(0)}%</span>`;
+  }).join('');
+}
+
+function drawAreaChart(id, ctx, W, H, hoverPos) {
+  const data = _distData[id];
+  if(!data) return;
+  const n = data[0].pmf.length;
+  const maxV = Math.max(...data.flatMap(d=>d.pmf));
+  const PAD_T = 8, PAD_B = 4;
+  const chartH = H - PAD_T - PAD_B;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid lines
+  [0.25, 0.5, 0.75, 1.0].forEach(s => {
+    const y = PAD_T + chartH - s * chartH;
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 1;
+    ctx.moveTo(0, y); ctx.lineTo(W, y);
+    ctx.stroke();
+  });
+
+  // Hover crosshair
+  if(hoverPos >= 0) {
+    const cx = posToX(hoverPos, n, W);
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = 1;
+    ctx.moveTo(cx, PAD_T); ctx.lineTo(cx, H - PAD_B);
+    ctx.stroke();
+  }
+
+  // Draw each driver — fill first, then lines on top
+  data.forEach(({pmf, cdf, fill, line}, di) => {
+    const pts = pmf.map((v,i) => ({
+      x: posToX(i, n, W),
+      y: PAD_T + chartH - (v/maxV)*chartH
+    }));
+    // CDF points scaled to same axis (cdf max = 1.0, but we scale to maxV so it sits above pmf)
+    // Use a secondary scale: cdf goes 0→1, map to full chart height
+    const cdfPts = cdf.map((v,i) => ({
+      x: posToX(i, n, W),
+      y: PAD_T + chartH - v * chartH
+    }));
+
+    // Fill area
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, H - PAD_B);
+    pts.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.lineTo(pts[n-1].x, H - PAD_B);
+    ctx.closePath();
+    const alpha = hoverPos >= 0 ? 0.07 : 0.14;
+    ctx.fillStyle = fill.replace(/[\d.]+\)$/, alpha+')');
+    ctx.fill();
+
+    // PMF line
+    ctx.beginPath();
+    pts.forEach((p,i) => i===0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    ctx.strokeStyle = line;
+    ctx.lineWidth = hoverPos>=0 ? 1.5 : 2;
+    ctx.globalAlpha = hoverPos>=0 ? 0.45 : 1;
+    ctx.lineJoin = 'round';
+    ctx.setLineDash([]);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // CDF dashed line — faint, same color
+    ctx.beginPath();
+    cdfPts.forEach((p,i) => i===0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    ctx.strokeStyle = line;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = hoverPos>=0 ? 0.18 : 0.35;
+    ctx.setLineDash([4, 4]);
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+
+    // Hover: redraw hovered driver bright with dots
+    if(hoverPos>=0){
+      // Bright PMF line
+      ctx.beginPath();
+      pts.forEach((p,i) => i===0 ? ctx.moveTo(p.x,p.y) : ctx.lineTo(p.x,p.y));
+      ctx.strokeStyle = line;
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.9;
+      ctx.setLineDash([]);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      // Bright CDF dashed line
+      ctx.beginPath();
+      cdfPts.forEach((p,i) => i===0 ? ctx.moveTo(p.x,p.y) : ctx.lineTo(p.x,p.y));
+      ctx.strokeStyle = line;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.55;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      // Dot on PMF
+      const hp = pts[hoverPos];
+      ctx.beginPath();
+      ctx.arc(hp.x, hp.y, 4, 0, Math.PI*2);
+      ctx.fillStyle = line;
+      ctx.fill();
+      ctx.strokeStyle = '#0d0f15';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Dot on CDF
+      const hcp = cdfPts[hoverPos];
+      ctx.beginPath();
+      ctx.arc(hcp.x, hcp.y, 3, 0, Math.PI*2);
+      ctx.fillStyle = line;
+      ctx.globalAlpha = 0.6;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#0d0f15';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  });
+}
+
+function posToX(i, n, W) {
+  // Map position index to x coordinate, with small margin
+  const PAD = 8;
+  return PAD + (i/(n-1)) * (W - PAD*2);
+}
+
+function distHover(event, id) {
+  const canvas = document.getElementById(id);
+  const data = _distData[id];
+  if(!canvas||!data) return;
+  const rect = canvas.getBoundingClientRect();
+  const W = _distData[id+'_W'] || rect.width;
+  const H = _distData[id+'_H'] || 450;
+  const n = data[0].pmf.length;
+  const xRel = event.clientX - rect.left;
+  // Snap to nearest position
+  const PAD = 8;
+  const frac = Math.max(0, Math.min(1, (xRel - PAD) / (W - PAD*2)));
+  const pos = Math.round(frac * (n-1));
+
+  const dpr = window.devicePixelRatio||1;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  drawAreaChart(id, ctx, W, H, pos);
+
+  // Tooltip
+  const tip = document.getElementById(id+'_tip');
+  if(tip) {
+    const header = `<span style="color:var(--muted);">Position ${pos+1}</span><br>`;
+    const rows = data.map(({d,pmf,cdf,line}) => {
+      const r=parseInt(line.slice(1,3),16),g=parseInt(line.slice(3,5),16),b=parseInt(line.slice(5,7),16);
+      return `<span style="color:rgba(${r},${g},${b},0.9);">■</span> ${d.name}  ` +
+             `<span style="color:var(--text);">${(pmf[pos]*100).toFixed(3)}%</span>` +
+             `<span style="color:var(--dim);"> cum ${(cdf[pos]*100).toFixed(1)}%</span>`;
+    }).join('<br>');
+    tip.innerHTML = header + rows;
+    tip.style.display = 'block';
+    // Smart tooltip placement
+    const cx = posToX(pos, n, W);
+    const tipW = 200;
+    const left = Math.min(Math.max(cx - tipW/2, 0), W - tipW);
+    tip.style.left = left + 'px';
+  }
+}
+
+function distLeave(id) {
+  const canvas = document.getElementById(id);
+  const data = _distData[id];
+  if(!canvas||!data) return;
+  const W = _distData[id+'_W'] || canvas.offsetWidth;
+  const H = _distData[id+'_H'] || 450;
+  const dpr = window.devicePixelRatio||1;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  drawAreaChart(id, ctx, W, H, -1);
+  const tip = document.getElementById(id+'_tip');
+  if(tip) tip.style.display = 'none';
+}
+
 
 // ─────────────────────────────────────────────────────────────
 // Render result card
 // ─────────────────────────────────────────────────────────────
-function renderCard(d,prob,vig){
+function renderCard(d,prob,vig,variant){
   const vp=applyVig(prob,vig);
-  // Compute peak and EF for sparkline label
-  const _pmf=buildDisplayPMF(d,fieldN||38,d.rank||20);
-  let _pkI=0; for(let i=1;i<_pmf.length;i++) if(_pmf[i]>_pmf[_pkI]) _pkI=i;
-  const pkPos=_pkI+1;
-  const efVal=Array.from(_pmf).reduce((s,p,i)=>s+p*(i+1),0).toFixed(1);
+
   const bands=[
     {l:'Win',    p:d.pWin,      col:'#4f8ef7'},
     {l:'2–3rd',  p:Math.max(0,d.pTop3-d.pWin),  col:'#3ecf8e'},
@@ -799,7 +1151,7 @@ function renderCard(d,prob,vig){
     </div>`;
   }).join('');
 
-  return`<div class="rc">
+  return`<div class="rc" style="${variant==='inner'?'border:none;border-radius:0;border-right:1px solid var(--line);':''}">
     <div class="rc-head">
       <div>
         <div class="rc-name">${d.name}</div>
@@ -814,18 +1166,14 @@ function renderCard(d,prob,vig){
       <div class="rc-bar"><div class="rc-bar-fill" style="width:${Math.min(100,prob*100).toFixed(2)}%"></div></div>
     </div>
     <div class="bands">${bandsHTML}</div>
-    <div class="dist-wrap">
-      <div class="dist-label">Finish distribution &nbsp;<span style="color:var(--blue);opacity:.7">■</span> top 10 &nbsp;<span style="color:var(--muted);opacity:.5">■</span> tail &nbsp;<span style="color:var(--dim)">peak P\${pkPos} · EF \${efVal}</span></div>
-      \${sparklineSVG(d, fieldN||38, d.rank||20)}
-    </div>
     <div class="divider-line"></div>
     <div class="odds-table">
       <div class="odds-cell odds-cell-top"><div class="oc-lbl">Fair %</div><div class="oc-val">${pctStr(prob)}</div></div>
       <div class="odds-cell odds-cell-top"><div class="oc-lbl">Fair decimal</div><div class="oc-val">${toDec(prob)}</div></div>
       <div class="odds-cell odds-cell-top"><div class="oc-lbl">Fair american</div><div class="oc-val">${toAm(prob)}</div></div>
-      <div class="odds-cell"><div class="oc-lbl">Marginated %</div><div class="oc-val marginated">${pctStr(vp)}</div></div>
-      <div class="odds-cell"><div class="oc-lbl">Marginated decimal</div><div class="oc-val marginated">${toDec(vp)}</div></div>
-      <div class="odds-cell"><div class="oc-lbl">Marginated american</div><div class="oc-val marginated">${toAm(vp)}</div></div>
+      <div class="odds-cell"><div class="oc-lbl" style="color:var(--muted)">Marginated %</div><div class="oc-val marginated">${pctStr(vp)}</div></div>
+      <div class="odds-cell"><div class="oc-lbl" style="color:var(--muted)">Marginated decimal</div><div class="oc-val marginated">${toDec(vp)}</div></div>
+      <div class="odds-cell"><div class="oc-lbl" style="color:var(--muted)">Marginated american</div><div class="oc-val marginated">${toAm(vp)}</div></div>
     </div>
   </div>`;
 }
@@ -865,22 +1213,29 @@ function renderH2H(){
   for(let i=0;i<drivers.length;i++) html+=chip(i,h2hSel,'h2h');
   html+=`</div></div>`;
   html+=`<div class="vig-row">
-    <span class="vig-label">Vig margin</span>
+    <span class="vig-label">Vig</span>
     <div class="vig-input-wrap">
       <input type="number" id="h2h-vig" value="${h2hVig}" min="100" max="130" step="0.5"
-        oninput="h2hVig=parseFloat(this.value)||106;renderH2H()">
+        oninput="h2hVig=parseFloat(this.value)||106;updateVigPresets('h2h',h2hVig);renderH2H()">
       <span class="vig-unit">%</span>
     </div>
-    <span class="vig-hint">applied on top of devigged fair price</span>
+    <div class="seg-ctrl">
+      <button class="seg-btn${h2hVig===106?' on':''}" onclick="setVig('h2h',106)">106%</button>
+      <button class="seg-btn${h2hVig===110?' on':''}" onclick="setVig('h2h',110)">110%</button>
+      <button class="seg-btn${h2hVig===115?' on':''}" onclick="setVig('h2h',115)">115%</button>
+    </div>
   </div>`;
 
   if(sel===2){
     const[ai,bi]=h2hSel;
     const tot=beatMatrix[ai][bi]+beatMatrix[bi][ai];
     const pA=tot>0?beatMatrix[ai][bi]/tot:.5;
-    html+=`<div class="result-grid">
-      ${renderCard(drivers[ai],pA,h2hVig)}
-      ${renderCard(drivers[bi],1-pA,h2hVig)}
+    html+=`<div style="border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:12px;">
+      <div class="result-grid" style="border:none;border-radius:0;">
+        ${renderCard(drivers[ai],pA,h2hVig,'inner')}
+        ${renderCard(drivers[bi],1-pA,h2hVig,'inner')}
+      </div>
+      ${renderDist([drivers[ai],drivers[bi]])}
     </div>`;
     html+=`<div class="sim-note">
       <b>Method:</b> 1,000,000 full-field simulations ·
@@ -911,22 +1266,29 @@ function renderGroup(){
   for(let i=0;i<drivers.length;i++) html+=chip(i,grpSel,'group');
   html+=`</div></div>`;
   html+=`<div class="vig-row">
-    <span class="vig-label">Vig margin</span>
+    <span class="vig-label">Vig</span>
     <div class="vig-input-wrap">
       <input type="number" id="grp-vig" value="${grpVig}" min="100" max="130" step="0.5"
-        oninput="grpVig=parseFloat(this.value)||106;renderGroup()">
+        oninput="grpVig=parseFloat(this.value)||110;updateVigPresets('grp',grpVig);renderGroup()">
       <span class="vig-unit">%</span>
     </div>
-    <span class="vig-hint">applied on top of devigged fair price</span>
+    <div class="seg-ctrl">
+      <button class="seg-btn${grpVig===106?' on':''}" onclick="setVig('grp',106)">106%</button>
+      <button class="seg-btn${grpVig===110?' on':''}" onclick="setVig('grp',110)">110%</button>
+      <button class="seg-btn${grpVig===115?' on':''}" onclick="setVig('grp',115)">115%</button>
+    </div>
   </div>`;
 
   if(grpSel.length>=2){
     const probs=grpProbs(grpSel);
     const sorted=grpSel.map((gi,li)=>({d:drivers[gi],p:probs[li]})).sort((a,b)=>b.p-a.p);
-    html+=`<div style="display:flex;flex-direction:column;gap:10px;">`;
-    for(const{d,p} of sorted) html+=renderCard(d,p,grpVig);
-    html+=`</div>`;
-    html+=`<div class="sim-note" style="margin-top:12px;"><b>Group:</b> probability that each driver finishes ahead of all other selected drivers · beat-matrix normalisation from 1M simulations</div>`;
+    html+=`<div style="border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:12px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));">`;
+    for(const{d,p} of sorted) html+=renderCard(d,p,grpVig,'inner');
+    html+=`</div>
+      ${renderDist(grpSel.map(gi=>drivers[gi]))}
+    </div>`;
+    html+=`<div class="sim-note" style="margin-top:10px;"><b>Group:</b> probability that each driver finishes ahead of all other selected drivers · beat-matrix normalisation from 1M simulations</div>`;
   } else {
     html+=`<div class="empty">
       <div class="empty-icon">⬡</div>
