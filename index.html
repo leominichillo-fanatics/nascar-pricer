@@ -189,12 +189,67 @@ input[type=number]:focus{border-color:var(--blue-dim);}
 
 /* ── responsive ──────────────────────────────────────────── */
 @media(max-width:768px){
-  .shell{grid-template-columns:1fr;}
+  /* Layout */
+  .shell{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;}
   .sidebar{display:none;}
+  .main{padding-bottom:64px;} /* space for bottom nav */
+  .topbar{padding:12px 16px;position:sticky;top:0;z-index:20;}
+  .topbar-title{font-size:14px;}
+  .topbar-meta{gap:8px;}
+  .content{padding:14px 14px 20px;}
+
+  /* Bottom navigation bar */
+  .mobile-nav{display:flex;}
+
+  /* Cards & grids */
   .result-grid{grid-template-columns:1fr;}
-  .content{padding:16px;}
-  .topbar{padding:12px 16px;}
+  .rc{padding:14px 14px;}
+  .rc-name{font-size:14px;}
+  .rc-pct{font-size:26px;}
+  .odds-grid{grid-template-columns:1fr 1fr 1fr;}
+
+  /* Driver chips — larger touch targets */
+  .dg{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:5px;}
+  .chip{padding:9px 10px;font-size:12px;}
+
+  /* Input */
+  textarea{min-height:140px;font-size:11px;}
+  .fmt-box{font-size:10px;}
+  .card{padding:14px;}
+
+  /* Vig row — stack on mobile */
+  .vig-row{flex-wrap:wrap;gap:8px;}
+
+  /* Seg controls */
+  .seg-btn{padding:5px 10px;}
+
+  /* Sim loader */
+  .btn-row{flex-wrap:wrap;}
+  .btn.btn-primary{width:100%;text-align:center;}
+  .btn-ghost{width:auto;}
+
+  /* Section headers */
+  .section-header{flex-direction:column;align-items:flex-start;gap:8px;}
+
+  /* Distribution chart height on mobile */
+  canvas{touch-action:none;}
 }
+
+/* ── mobile bottom nav ───────────────────────────────────── */
+.mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:30;
+  background:var(--bg1);border-top:1px solid var(--line);
+  padding:8px 0 max(8px,env(safe-area-inset-bottom));
+  gap:0;}
+.mobile-nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:6px 4px;border:none;background:none;color:var(--dim);cursor:pointer;
+  font-family:var(--mono);font-size:9px;letter-spacing:.04em;text-transform:uppercase;
+  transition:color .12s;}
+.mobile-nav-btn:hover,.mobile-nav-btn.on{color:var(--blue);}
+.mobile-nav-btn svg{width:18px;height:18px;opacity:.7;}
+.mobile-nav-btn.on svg{opacity:1;}
+.mobile-nav-dot{width:4px;height:4px;border-radius:50%;background:var(--blue);
+  opacity:0;transition:opacity .15s;}
+.mobile-nav-btn.on .mobile-nav-dot{opacity:1;}
 
 
 /* ── segmented control ───────────────────────────────────── */
@@ -213,6 +268,10 @@ input[type=number]:focus{border-color:var(--blue-dim);}
 .racecar{position:absolute;bottom:2px;left:0;font-size:24px;line-height:1;transition:left .1s linear;transform:scaleX(-1);filter:drop-shadow(0 0 8px rgba(79,142,247,.7));}
 .sim-loader-label{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:8px;}
 
+
+@media(max-width:768px){
+  canvas[id^="dc_"]{max-height:300px;}
+}
 </style>
 </head>
 <body>
@@ -1309,8 +1368,39 @@ function toggleGrp(i){
   renderGroup();
 }
 
+
+function setMobileNav(id){
+  document.querySelectorAll('.mobile-nav-btn').forEach(b=>b.classList.remove('on'));
+  const btn=document.getElementById('mnav-'+id);
+  if(btn) btn.classList.add('on');
+}
+
 // Initialise
 loadSample();
 </script>
+
+<!-- ── mobile bottom nav ──────────────────────────────────── -->
+<nav class="mobile-nav" id="mobileNav">
+  <button class="mobile-nav-btn on" id="mnav-input" onclick="showPanel('input');setMobileNav('input')">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 8h6M5 5.5h4M5 10.5h3"/></svg>
+    <span>Input</span>
+    <div class="mobile-nav-dot"></div>
+  </button>
+  <button class="mobile-nav-btn" id="mnav-h2h" onclick="showPanel('h2h');setMobileNav('h2h')">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5" cy="8" r="3"/><circle cx="11" cy="8" r="3"/></svg>
+    <span>H2H</span>
+    <div class="mobile-nav-dot"></div>
+  </button>
+  <button class="mobile-nav-btn" id="mnav-group" onclick="showPanel('group');setMobileNav('group')">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="4" cy="8" r="2.5"/><circle cx="8" cy="8" r="2.5"/><circle cx="12" cy="8" r="2.5"/></svg>
+    <span>Group</span>
+    <div class="mobile-nav-dot"></div>
+  </button>
+  <button class="mobile-nav-btn" id="mnav-about" onclick="showPanel('about');setMobileNav('about')">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 7.5v4M8 5.5v.5"/></svg>
+    <span>About</span>
+    <div class="mobile-nav-dot"></div>
+  </button>
+</nav>
 </body>
 </html>
