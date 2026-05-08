@@ -1045,7 +1045,16 @@ function renderFreqTable(){
 // ─────────────────────────────────────────────────────────────
 // Formatting
 // ─────────────────────────────────────────────────────────────
-function applyVig(p,v){return Math.min(.9999,Math.max(.0001,p*(v/100)));}
+function powerRevigK(probs,targetOR){
+  if(targetOR<=1) return 1;
+  let lo=0.001,hi=1.0;
+  for(let i=0;i<64;i++){
+    const mid=(lo+hi)/2;
+    const s=probs.reduce((a,p)=>a+Math.pow(p,mid),0);
+    if(s<targetOR) hi=mid; else lo=mid;
+  }
+  return(lo+hi)/2;
+}
 function toDec(p){return(1/p).toFixed(2);}
 function toAm(p){
   if(p<=0||p>=1) return'—';
@@ -1400,8 +1409,8 @@ function distLeave(id) {
 // ─────────────────────────────────────────────────────────────
 // Render result card
 // ─────────────────────────────────────────────────────────────
-function renderCard(d,prob,vig,variant){
-  const vp=applyVig(prob,vig);
+function renderCard(d,prob,vigK,variant){
+  const vp=Math.min(.9999,Math.max(.0001,Math.pow(prob,vigK)));
 
   const bands=[
     {l:'Win',    p:d.pWin,      col:'#4f8ef7'},
@@ -1499,10 +1508,11 @@ function renderH2H(){
     const[ai,bi]=h2hSel;
     const tot=beatMatrix[ai][bi]+beatMatrix[bi][ai];
     const pA=tot>0?beatMatrix[ai][bi]/tot:.5;
+    const h2hVigK=powerRevigK([pA,1-pA],h2hVig/100);
     html+=`<div style="border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:12px;">
       <div class="result-grid" style="border:none;border-radius:0;">
-        ${renderCard(drivers[ai],pA,h2hVig,'inner')}
-        ${renderCard(drivers[bi],1-pA,h2hVig,'inner')}
+        ${renderCard(drivers[ai],pA,h2hVigK,'inner')}
+        ${renderCard(drivers[bi],1-pA,h2hVigK,'inner')}
       </div>
       ${renderDist([drivers[ai],drivers[bi]])}
     </div>`;
@@ -1550,10 +1560,11 @@ function renderGroup(){
 
   if(grpSel.length>=2){
     const probs=grpProbs(grpSel);
+    const grpVigK=powerRevigK(probs,grpVig/100);
     const sorted=grpSel.map((gi,li)=>({d:drivers[gi],p:probs[li]})).sort((a,b)=>b.p-a.p);
     html+=`<div style="border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:12px;">
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));">`;
-    for(const{d,p} of sorted) html+=renderCard(d,p,grpVig,'inner');
+    for(const{d,p} of sorted) html+=renderCard(d,p,grpVigK,'inner');
     html+=`</div>
       ${renderDist(grpSel.map(gi=>drivers[gi]))}
     </div>`;
