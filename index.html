@@ -169,6 +169,16 @@ input[type=number]:focus{border-color:var(--blue-dim);}
 .sim-note{font-size:10px;color:var(--dim);padding:10px 14px;background:var(--bg2);border-radius:var(--radius);line-height:1.7;border-left:2px solid var(--blue-dim);}
 .sim-note b{color:var(--muted);}
 
+/* ── position distribution table ────────────────────────── */
+.dist-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-lg);}
+.dist-table{border-collapse:collapse;font-size:10px;font-family:var(--mono);white-space:nowrap;width:100%;}
+.dist-table th{padding:5px 8px;background:var(--bg3);color:var(--dim);font-weight:500;text-align:center;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:1;}
+.dist-table td{padding:4px 7px;text-align:center;color:var(--bright);border-bottom:1px solid var(--line);min-width:46px;}
+.dist-table tr:last-child td{border-bottom:none;}
+.dist-name-col{text-align:left !important;padding-left:12px !important;padding-right:14px !important;min-width:150px;position:sticky;left:0;z-index:2 !important;}
+.dist-table td.dist-name-col{background:var(--bg1);color:var(--muted) !important;font-weight:500;}
+.dist-table th.dist-name-col{background:var(--bg3);z-index:3;}
+
 /* ── field info strip ────────────────────────────────────── */
 .field-strip{display:flex;gap:20px;margin-bottom:20px;font-size:10px;color:var(--dim);align-items:center;flex-wrap:wrap;}
 .field-kv{display:flex;align-items:center;gap:5px;}
@@ -303,7 +313,7 @@ input[type=number]:focus{border-color:var(--blue-dim);}
       About
     </button>
   </nav>
-  <div class="sidebar-footer">v1.0 &nbsp;·&nbsp; <span>1M sim engine</span></div>
+  <div class="sidebar-footer">v1.3 &nbsp;·&nbsp; <span>1M sim engine</span></div>
 </aside>
 
 <!-- ── main ───────────────────────────────────────────────── -->
@@ -369,6 +379,7 @@ input[type=number]:focus{border-color:var(--blue-dim);}
         </div>
         <div id="statusEl" class="status"></div>
       </div>
+      <div id="dist-body" style="margin-top:16px;"></div>
     </div>
 
     <!-- H2H -->
@@ -454,9 +465,11 @@ function setSimCount(n){
 
 function clearSim(){
   if(!confirm('Clear current results and reset?')) return;
-  beatMatrix=null; drivers=[]; h2hSel=[]; grpSel=[]; fieldN=0;
-  document.getElementById('h2h-body').innerHTML='<div class="empty"><div class="empty-icon">⚡</div><div class="empty-title">No simulation data</div><div class="empty-desc">Paste odds and run the simulator on the Input tab first.</div></div>';
-  document.getElementById('grp-body').innerHTML='<div class="empty"><div class="empty-icon">⚡</div><div class="empty-title">No simulation data</div><div class="empty-desc">Paste odds and run the simulator on the Input tab first.</div></div>';
+  beatMatrix=null; simRanks=null; simN=0; simNSIM=0; drivers=[]; h2hSel=[]; grpSel=[]; fieldN=0;
+  const _emptyState='<div class="empty"><div class="empty-icon">⚡</div><div class="empty-title">No simulation data</div><div class="empty-desc">Paste odds and run the simulator on the Input tab first.</div></div>';
+  document.getElementById('h2h-body').innerHTML=_emptyState;
+  document.getElementById('grp-body').innerHTML=_emptyState;
+  document.getElementById('dist-body').innerHTML='';
   document.getElementById('clearBtn').style.display='none';
   document.getElementById('statusEl').textContent='';
   document.getElementById('statusEl').className='status';
@@ -484,7 +497,7 @@ const clamp=p=>Math.min(.9999,Math.max(1e-6,p));
 const MAX_RISE=1.4;
 
 let drivers=[], h2hSel=[], grpSel=[], h2hVig=106, grpVig=110;
-let fieldN=0, beatMatrix=null, simWorker=null;
+let fieldN=0, beatMatrix=null, simWorker=null, simRanks=null, simN=0, simNSIM=0;
 
 // ─────────────────────────────────────────────────────────────
 // Navigation
@@ -506,49 +519,60 @@ function showPanel(id){
 // Sample data
 // ─────────────────────────────────────────────────────────────
 const SAMPLE=`Driver\tWin\tTop 3\tTop 5\tTop 10
-Tyler Reddick\t5.8\t2.5\t1.833333333\t1.303030303
-Denny Hamlin\t6.2\t2.7\t1.909090909\t1.333333333
-Kyle Larson\t8.6\t3.4\t2.25\t1.434782609
-William Byron\t10.5\t3.9\t2.45\t1.5
-Chase Elliott\t11.5\t3.95\t2.45\t1.5
-Christopher Bell\t11.5\t4.3\t2.6\t1.555555556
-Chase Briscoe\t13\t4.6\t2.75\t1.606060606
-Carson Hocevar\t13\t4.8\t2.9\t1.666666667
-Chris Buescher\t14\t5\t3\t1.689655172
-Ty Gibbs\t15\t5.4\t3.15\t1.769230769
-Ryan Blaney\t16\t5.6\t3.25\t1.769230769
-Bubba Wallace\t23\t8\t4.2\t2.05
-Joey Logano\t29\t9.4\t4.7\t2.25
-Daniel Suarez\t33.5\t10.25\t5.2\t2.4
-Brad Keselowski\t36\t11\t5.6\t2.55
-Alex Bowman\t38.5\t11\t5.6\t2.55
-Kyle Busch\t46\t14\t6.6\t2.75
-Ross Chastain\t48.5\t14\t6.6\t2.75
+Shane Gisbergen\t2.1\t1.333333333\t1.19047619\t1.076923077
+Connor Zilisch\t4.3\t1.952380952\t1.476190476\t1.153846154
+Tyler Reddick\t8.4\t3.4\t2.2\t1.357142857
+Christopher Bell\t11\t4.2\t2.45\t1.465116279
+William Byron\t15\t5.5\t3\t1.64516129
+Chris Buescher\t15\t5.5\t3.05\t1.740740741
+Chase Elliott\t18\t5.7\t3.3\t1.666666667
+Kyle Larson\t20\t6.3\t3.6\t1.769230769
+Chase Briscoe\t20\t6.5\t3.6\t1.8
+Ty Gibbs\t21\t6.8\t3.9\t1.833333333
+Michael McDowell\t22\t6.9\t3.8\t1.833333333
+Ryan Blaney\t23\t7.6\t4.1\t1.869565217
+AJ Allmendinger\t25\t8.2\t4.6\t1.952380952
+Ross Chastain\t27\t9\t5.1\t2.15
+Daniel Suarez\t41\t13\t6.3\t2.5
+Carson Hocevar\t43.5\t13\t6.3\t2.45
+Alex Bowman\t46\t14\t6.8\t2.5
 Erik Jones\t48.5\t13\t7.8\t3.45
-Austin Cindric\t61\t18\t8\t3.25
-Corey Heim\t61\t18\t8.3\t3.35
-Josh Berry\t66\t23\t9.8\t3.75
-Ryan Preece\t71\t20\t8.7\t3.45
-Michael McDowell\t101\t18\t8\t3.2
-Connor Zilisch\t181\t21\t9.7\t3.6
+Kyle Busch\t56\t18\t9\t2.9
+Austin Cindric\t71\t24\t10\t3.35
+Denny Hamlin\t76\t25\t10\t3.65
+Ryan Preece\t81\t24\t11\t3.4
+Joey Logano\t101\t31\t10\t3.65
+Bubba Wallace\t171\t43.5\t19\t5.4
 Chad Finchum\t201\t71\t31\t8.2
-Austin Dillon\t301\t56\t23\t7
-Ricky Stenhouse Jr\t301\t71\t29\t8.1
-John Nemechek\t301\t91\t36\t10.5
-Shane Gisbergen\t401\t86\t33.5\t9.7
-AJ Allmendinger\t401\t81\t36\t10
-Zane Smith\t401\t81\t36\t10
-Riley Herbst\t501\t161\t46\t12
-Todd Gilliland\t501\t161\t46\t12
-Noah Gragson\t501\t161\t46\t12
-Cole Custer\t601\t201\t51\t15
-Ty Dillon\t901\t201\t86\t19
-Cody Ware\t1001\t501\t201\t38.5`;
+Todd Gilliland\t201\t51\t20\t5.7
+Zane Smith\t251\t61\t25\t6.4
+Brad Keselowski\t301\t71\t30\t7.7
+Austin Dillon\t401\t81\t29\t9.3
+John Nemechek\t401\t81\t29\t9.3
+Noah Gragson\t401\t81\t29\t9.3
+Cole Custer\t501\t131\t38.5\t11
+Josh Berry\t801\t171\t46\t14
+Ricky Stenhouse Jr\t801\t171\t46\t14
+Riley Herbst\t801\t171\t46\t14
+Ty Dillon\t801\t191\t61\t15
+Cody Ware\t1001\t301\t86\t24`;
 function loadSample(){document.getElementById('oddsIn').value=SAMPLE;}
 
 // ─────────────────────────────────────────────────────────────
 // Parse + devig
 // ─────────────────────────────────────────────────────────────
+function powerDevigK(odds, target){
+  const impl=odds.map(o=>1/o);
+  let lo=0.01,hi=10;
+  for(let i=0;i<100;i++){
+    const m=(lo+hi)/2;
+    const s=impl.reduce((a,p)=>a+Math.pow(p,m),0);
+    if(s>target) lo=m; else hi=m;
+    if(hi-lo<1e-10) break;
+  }
+  return(lo+hi)/2;
+}
+
 function parseAndDevig(raw){
   const lines=raw.trim().split('\n').filter(l=>l.trim());
   const parsed=[];
@@ -568,12 +592,16 @@ function parseAndDevig(raw){
   const sT5=parsed.reduce((s,d)=>s+1/d.t5O,0);
   const sT10=parsed.reduce((s,d)=>s+1/d.t10O,0);
   const or={w:sW*100,t3:sT3/3*100,t5:sT5/5*100,t10:sT10/10*100};
+  const kW =powerDevigK(parsed.map(d=>d.wO),1);
+  const kT3=powerDevigK(parsed.map(d=>d.t3O),3);
+  const kT5=powerDevigK(parsed.map(d=>d.t5O),5);
+  const kT10=powerDevigK(parsed.map(d=>d.t10O),10);
   const devd=parsed.map(d=>({
     name:d.name, winDec:d.wO.toFixed(1),
-    pWin:(1/d.wO)/sW,
-    pTop3:(1/d.t3O)/sT3*3,
-    pTop5:(1/d.t5O)/sT5*5,
-    pTop10:(1/d.t10O)/sT10*10,
+    pWin:Math.pow(1/d.wO,kW),
+    pTop3:Math.pow(1/d.t3O,kT3),
+    pTop5:Math.pow(1/d.t5O,kT5),
+    pTop10:Math.pow(1/d.t10O,kT10),
   }));
   return{devd,or,n:parsed.length};
 }
@@ -646,15 +674,27 @@ function buildTail(p9,p10,m11p,rank,n){
   p11=Math.min(p11,m11p*.4);
   const rising=slope>0&&p11>p10;
 
+  // Stronger favourites (higher pTop10) must decay faster so that
+  // their tail never exceeds a weaker driver's tail at any position.
+  // Derived from: crossing point k* = ln(ratio) / (beta_weak - beta_strong) must exceed tl.
+  // K=0.15 is the minimum that guarantees correct ordering for the SVG/Zilisch case
+  // and generalises cleanly across the field. Accepts a small (~1.8×) bump at P10→P11
+  // for the most extreme favourites — the price of correct cross-driver ordering.
+  const pTop10=1-m11p;
+  const minBeta=pTop10*pTop10*0.15;
+
   let tail;
   if(!rising){
-    const ts=m11p/p11; let beta=.001;
+    // Start from the continuity anchor (ts = m11p/p10 gives tail[0]=p10),
+    // then floor at minBeta so favourites decay fast enough.
+    const ts=m11p/Math.max(p10,1e-9); let beta=.001;
     if(ts<tl){
       let lo=.0001,hi=10;
       for(let i=0;i<100;i++){const m=(lo+hi)/2;if(geomSum(m,tl)>ts)lo=m;else hi=m;if(hi-lo<1e-10)break;}
       beta=(lo+hi)/2;
     }
-    const raw=Array.from({length:tl},(_,j)=>p11*Math.exp(-beta*j));
+    beta=Math.max(beta,minBeta);
+    const raw=Array.from({length:tl},(_,j)=>Math.exp(-beta*j));
     const s=raw.reduce((a,b)=>a+b,0);
     tail=raw.map(v=>v/s*m11p);
   } else {
@@ -721,7 +761,10 @@ function runSim(){
     `<span class="or-tag">Top 10 <b>${or.t10.toFixed(1)}%</b></span>`+
     `<span class="or-tag highlight">devigged</span>`;
 
-  const lsArr=devd.map(d=>d.pWin+d.pTop3+d.pTop5+d.pTop10);
+  // Use pWin alone as the Plackett-Luce strength for pairwise comparisons.
+  // The sum-of-four approach dilutes the win-market edge because the top-10
+  // market compresses separation between strong and weak drivers.
+  const lsArr=devd.map(d=>d.pWin);
   function lsRank(ls){return lsArr.filter(x=>x>=ls).length;}
 
   // Build CDFs
@@ -750,37 +793,127 @@ function runSim(){
 
   const workerSrc=`
     self.onmessage=function(e){
-      const{cdfs,pTop10s,lsValues,n,nSim,chunk}=e.data;
+      const{lsValues,pTop10s,n,nSim,chunk,calibrateRaces}=e.data;
       const beat=new Int32Array(n*n);
+      const ranks=new Int8Array(n*nSim);
+      let totalLambdaAll=0;
+      for(let i=0;i<n;i++) totalLambdaAll+=lsValues[i];
+      const order=new Uint8Array(n);
+      const activeIdx=new Uint8Array(n);
+      const activeLam=new Float64Array(n);
+      const isIncident=new Uint8Array(n);
+      const incidentList=new Uint8Array(n);
+
+      // ── Calibration phase: pure PL, count top-10 finishes per driver ──
+      const calT10=new Int32Array(n);
+      const t10Limit=n<10?n:10;
+      for(let s=0;s<calibrateRaces;s++){
+        for(let i=0;i<n;i++){activeIdx[i]=i;activeLam[i]=lsValues[i];}
+        let remaining=n, totalLam=totalLambdaAll;
+        for(let pos=0;pos<t10Limit;pos++){
+          let r=Math.random()*totalLam, cum=0, wk=remaining-1;
+          for(let k=0;k<remaining;k++){cum+=activeLam[k];if(cum>=r){wk=k;break;}}
+          const wi=activeIdx[wk];
+          calT10[wi]++;
+          totalLam-=activeLam[wk];
+          activeIdx[wk]=activeIdx[remaining-1];
+          activeLam[wk]=activeLam[remaining-1];
+          remaining--;
+        }
+      }
+      // Solve for q: target P(in top 10) = (1-q_i) * plT10_i  →  q_i = 1 - market/plT10
+      // Floor at Q_FLOOR ensures every driver has a small "catastrophic DNF" chance
+      // (engine, crash) so the back of the distribution table is never zero for anyone.
+      const Q_FLOOR=0.015;
+      const q=new Float64Array(n);
+      const plT10arr=new Float64Array(n);
+      for(let i=0;i<n;i++){
+        const plT10=calT10[i]/calibrateRaces;
+        plT10arr[i]=plT10;
+        let qi=0;
+        if(plT10>pTop10s[i]&&plT10>0) qi=(plT10-pTop10s[i])/plT10;
+        q[i]=qi>Q_FLOOR?qi:Q_FLOOR;
+      }
+      self.postMessage({type:'calibrated',q:Array.from(q),plT10:Array.from(plT10arr),mkt:Array.from(pTop10s)});
+
+      // ── Main phase: PL sequential with per-driver incident draws ──
+      // Incidents land at distinct random positions in [P11..PN] (uniform).
+      // Non-incidents PL-race for the remaining positions (top 10 always available + leftover tail slots).
+      const tailPos=new Uint8Array(n);  // scratch: positions 10..n-1, partially shuffled
+      const usedPos=new Uint8Array(n);  // which positions are taken by incidents
+      const remPos=new Uint8Array(n);   // remaining positions (ascending) for PL output
       let done=0;
       function run(){
         const end=Math.min(done+chunk,nSim);
+        const tailLen=n-10;
         for(let s=done;s<end;s++){
-          const pos=new Int8Array(n);
+          // Draw incidents
+          let incidentCount=0;
           for(let i=0;i<n;i++){
-            const u=Math.random();
-            if(u>=pTop10s[i]){pos[i]=-1;continue;}
-            let lo=0,hi=9;
-            while(lo<hi){const m=(lo+hi)>>1;if(cdfs[i*11+m+1]<u)lo=m+1;else hi=m;}
-            pos[i]=lo;
+            if(Math.random()<q[i]){isIncident[i]=1;incidentCount++;}
+            else isIncident[i]=0;
           }
-          for(let a=0;a<n;a++){
-            const pa=pos[a];
-            for(let b=a+1;b<n;b++){
-              const pb=pos[b];
-              let aW;
-              if(pa>=0&&pb>=0) aW=pa<pb?1:(pa===pb?(Math.random()<lsValues[a]/(lsValues[a]+lsValues[b])?1:0):0);
-              else if(pa>=0&&pb<0) aW=1;
-              else if(pa<0&&pb>=0) aW=0;
-              else aW=Math.random()<lsValues[a]/(lsValues[a]+lsValues[b])?1:0;
-              if(aW) beat[a*n+b]++; else beat[b*n+a]++;
+          // Safety: cap incidents at available tail slots (only triggers if q values are huge)
+          if(incidentCount>tailLen){
+            // un-mark random incidents until we fit
+            let toRemove=incidentCount-tailLen;
+            for(let i=n-1;i>=0&&toRemove>0;i--){
+              if(isIncident[i]&&Math.random()<toRemove/(i+1)){isIncident[i]=0;incidentCount--;toRemove--;}
             }
           }
+
+          // Sample distinct random positions from [10..n-1] via partial Fisher-Yates
+          for(let i=0;i<tailLen;i++) tailPos[i]=10+i;
+          for(let j=0;j<incidentCount;j++){
+            const sj=j+Math.floor(Math.random()*(tailLen-j));
+            const tmp=tailPos[j];tailPos[j]=tailPos[sj];tailPos[sj]=tmp;
+          }
+          // Mark used positions
+          for(let i=0;i<n;i++) usedPos[i]=0;
+          for(let j=0;j<incidentCount;j++) usedPos[tailPos[j]]=1;
+
+          // Pair incident drivers with their random positions
+          let incIdx=0;
+          for(let i=0;i<n;i++) if(isIncident[i]) incidentList[incIdx++]=i;
+          for(let j=0;j<incidentCount;j++) order[incidentList[j]]=tailPos[j];
+
+          // Build remaining positions list (ascending) for active drivers
+          let rIdx=0;
+          for(let p=0;p<n;p++) if(!usedPos[p]) remPos[rIdx++]=p;
+
+          // Build active pool
+          let activeCount=0, totalLam=0;
+          for(let i=0;i<n;i++){
+            if(!isIncident[i]){
+              activeIdx[activeCount]=i;
+              activeLam[activeCount]=lsValues[i];
+              totalLam+=lsValues[i];
+              activeCount++;
+            }
+          }
+          // PL sequential — assign winners to remPos in ascending order
+          let remaining=activeCount;
+          for(let pos=0;pos<activeCount;pos++){
+            let r=Math.random()*totalLam, cum=0, wk=remaining-1;
+            for(let k=0;k<remaining;k++){cum+=activeLam[k];if(cum>=r){wk=k;break;}}
+            const wi=activeIdx[wk];
+            order[wi]=remPos[pos];
+            totalLam-=activeLam[wk];
+            activeIdx[wk]=activeIdx[remaining-1];
+            activeLam[wk]=activeLam[remaining-1];
+            remaining--;
+          }
+
+          const base=s*n;
+          for(let i=0;i<n;i++) ranks[base+i]=order[i];
+          for(let a=0;a<n;a++)
+            for(let b=a+1;b<n;b++)
+              if(order[a]<order[b]) beat[a*n+b]++; else beat[b*n+a]++;
         }
         done=end;
         self.postMessage({type:'progress',done,total:nSim});
         if(done<nSim) setTimeout(run,0);
-        else self.postMessage({type:'done',beat:beat.buffer,n},[beat.buffer]);
+        else self.postMessage({type:'done',beat:beat.buffer,ranks:ranks.buffer,n},[beat.buffer,ranks.buffer]);
       }
       run();
     };
@@ -789,9 +922,18 @@ function runSim(){
   const blob=new Blob([workerSrc],{type:'application/javascript'});
   const wURL=URL.createObjectURL(blob);
   simWorker=new Worker(wURL);
-  simWorker.postMessage({cdfs,pTop10s,lsValues,n,nSim:NSIM,chunk:CHUNK},[cdfs.buffer,pTop10s.buffer,lsValues.buffer]);
+  const _simStart=performance.now();
+  const CALIBRATE_RACES=100000;
+  simWorker.postMessage({lsValues,pTop10s,n,nSim:NSIM,chunk:CHUNK,calibrateRaces:CALIBRATE_RACES},[lsValues.buffer,pTop10s.buffer]);
 
   simWorker.onmessage=function(e){
+    if(e.data.type==='calibrated'){
+      const rows=devd.map((d,i)=>({name:d.name,plT10:e.data.plT10[i],mkt:e.data.mkt[i],q:e.data.q[i]}))
+        .sort((a,b)=>b.plT10-a.plT10).slice(0,12);
+      console.log('Incident calibration (top 12 by PL Top10):');
+      console.table(rows.map(r=>({Driver:r.name,'PL Top10':(r.plT10*100).toFixed(1)+'%','Market Top10':(r.mkt*100).toFixed(1)+'%','Incident q':(r.q*100).toFixed(1)+'%'})));
+      return;
+    }
     if(e.data.type==='progress'){
       const pct=(e.data.done/e.data.total*100);
       document.getElementById('trackFill').style.width=pct.toFixed(0)+'%';
@@ -803,6 +945,8 @@ function runSim(){
       const bc=new Int32Array(e.data.beat);
       beatMatrix=[];
       for(let i=0;i<n;i++){beatMatrix.push([]);for(let j=0;j<n;j++) beatMatrix[i].push(bc[i*n+j]/NSIM);}
+      simRanks=new Int8Array(e.data.ranks);
+      simN=n; simNSIM=NSIM;
       drivers=devd.map((d,i)=>({...d,ls:lsArr[i],rank:lsRank(lsArr[i]),idx:i}));
       fieldN=n; h2hSel=[]; grpSel=[];
       simBtn.disabled=false;
@@ -816,6 +960,8 @@ function runSim(){
       document.getElementById('loaderLabel').textContent='Complete 🏁';
       statusEl.textContent=`✓  ${n}-driver field · 1,000,000 simulations complete`;
       statusEl.className='status ok';
+      console.log(`PL sim: ${((performance.now()-_simStart)/1000).toFixed(2)}s for ${NSIM} races, ${n} drivers`);
+      renderFreqTable();
       simWorker.terminate(); URL.revokeObjectURL(wURL); simWorker=null;
     }
   };
@@ -826,20 +972,74 @@ function runSim(){
 }
 
 // ─────────────────────────────────────────────────────────────
-// Group probability (beat-matrix normalisation)
-// ─────────────────────────────────────────────────────────────
+// Group probability from PL simulation. Each position is unique per race so
+// there are never ties — just find the group member with the lowest finish order.
 function grpProbs(idxs){
-  const probs=idxs.map(i=>{
-    let p=1;
-    for(const j of idxs){
-      if(j===i) continue;
-      const tot=beatMatrix[i][j]+beatMatrix[j][i];
-      if(tot>0) p*=beatMatrix[i][j]/tot;
+  const m=idxs.length;
+  const counts=new Float64Array(m);
+  const n=simN;
+  for(let s=0;s<simNSIM;s++){
+    const base=s*n;
+    let best=255, bestDI=0;
+    for(let di=0;di<m;di++){
+      const p=simRanks[base+idxs[di]];
+      if(p<best){best=p;bestDI=di;}
     }
-    return p;
-  });
-  const sum=probs.reduce((a,b)=>a+b,0);
-  return probs.map(p=>sum>0?p/sum:1/probs.length);
+    counts[bestDI]++;
+  }
+  const sum=counts.reduce((a,b)=>a+b,0);
+  return Array.from(counts).map(c=>sum>0?c/sum:1/m);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Position distribution table
+// ─────────────────────────────────────────────────────────────
+function renderFreqTable(){
+  const el=document.getElementById('dist-body');
+  if(!simRanks||!drivers.length){
+    el.innerHTML='<div class="empty"><div class="empty-icon">📊</div><div class="empty-title">No simulation data</div><div class="empty-desc">Paste odds and run the simulator on the Input tab first.</div></div>';
+    return;
+  }
+  const n=simN, m=simNSIM;
+
+  // Count [driver_idx][finish_pos] — O(n·m) single pass
+  const counts=Array.from({length:n},()=>new Int32Array(n));
+  for(let s=0;s<m;s++){
+    const base=s*n;
+    for(let i=0;i<n;i++) counts[i][simRanks[base+i]]++;
+  }
+
+  // Global max for heat-map scaling
+  let globalMax=0;
+  for(let i=0;i<n;i++) for(let p=0;p<n;p++) if(counts[i][p]>globalMax) globalMax=counts[i][p];
+
+  // Sort drivers strongest → weakest
+  const sorted=[...drivers].sort((a,b)=>a.rank-b.rank);
+
+  let html='<div class="dist-wrap"><table class="dist-table"><thead><tr><th class="dist-name-col">Driver</th>';
+  for(let p=0;p<n;p++) html+=`<th>P${p+1}</th>`;
+  html+='</tr></thead><tbody>';
+
+  for(const d of sorted){
+    const i=d.idx;
+    html+=`<tr><td class="dist-name-col">${d.name}</td>`;
+    for(let p=0;p<n;p++){
+      const c=counts[i][p];
+      const pct=c/m*100;
+      const alpha=globalMax>0?(c/globalMax*0.82).toFixed(3):0;
+      let txt;
+      if(c===0) txt='';
+      else if(pct>=10) txt=pct.toFixed(1)+'%';
+      else if(pct>=1) txt=pct.toFixed(2)+'%';
+      else if(pct>=0.01) txt=pct.toFixed(2)+'%';
+      else txt='<.01';
+      html+=`<td style="background:rgba(59,130,246,${alpha})">${txt}</td>`;
+    }
+    html+='</tr>';
+  }
+
+  html+='</tbody></table></div>';
+  el.innerHTML=html;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -870,6 +1070,16 @@ function buildDisplayPMF(d, n, rank) {
   const m11p=1-pT10;
   const tail=buildTail(pmf[8],pmf[9],m11p,rank,n);
   for(let k=0;k<n-10;k++) pmf[10+k]=tail[k];
+  // For non-rising distributions (declining at P9→P10), minBeta can force a bump
+  // at P11. Suppress it by cascading the excess to P12-P15.
+  // Rising distributions legitimately have P11 > P10 (mode beyond top 10) — skip cascade.
+  const slopeAtP10=pmf[9]-pmf[8];
+  if(slopeAtP10<=0 && pmf[10]>pmf[9]){
+    const excess=pmf[10]-pmf[9];
+    pmf[10]=pmf[9];
+    const cascade=[.40,.30,.20,.10];
+    for(let c=0;c<cascade.length&&11+c<n;c++) pmf[11+c]+=excess*cascade[c];
+  }
   const tot=Array.from(pmf).reduce((a,b)=>a+b,0);
   for(let i=0;i<n;i++) pmf[i]/=tot;
   return pmf;
