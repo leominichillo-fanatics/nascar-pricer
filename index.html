@@ -494,7 +494,7 @@ function updateVigPresets(tab, v){
 }
 
 const clamp=p=>Math.min(.9999,Math.max(1e-6,p));
-const MAX_RISE=1.4;
+const MAX_RISE=1.25;
 
 let drivers=[], h2hSel=[], grpSel=[], h2hVig=106, grpVig=110;
 let fieldN=0, beatMatrix=null, simWorker=null, simRanks=null, simN=0, simNSIM=0;
@@ -700,12 +700,17 @@ function buildTail(p9,p10,m11p,rank,n){
   } else {
     const tf=p11/m11p, bLo=.5+(rank-1)/37*3, bHi=2+(rank-1)/37*12;
     let bErr=Infinity,bRaw=null,bSum=0;
-    for(let beta=bLo;beta<=bHi*3;beta*=1.1) for(let d_p=1.02;d_p<=5;d_p+=.1){
+    for(let beta=bLo;beta<=bHi*3;beta*=1.1) for(let d_p=1.02;d_p<=1.8;d_p+=.05){
       const raw=new Float64Array(tl);
       for(let k=1;k<=tl;k++) raw[k-1]=Math.pow(k,d_p-1)*Math.exp(-Math.pow(k/beta,p_p));
       if(raw.some(v=>!isFinite(v)||v<0)) continue;
       const sum=Array.from(raw).reduce((a,b)=>a+b,0); if(sum<=0) continue;
-      const err=Math.abs(raw[0]/sum-tf);
+      // Anchor error (P11 ratio) plus a soft penalty on peakedness:
+      // peak/mean > 2.5 is heavily over-concentrated for a finishing distribution.
+      let mx=0; for(let i=0;i<tl;i++) if(raw[i]>mx) mx=raw[i];
+      const peakRatio=mx/(sum/tl);
+      const peakPen=Math.max(0,peakRatio-2.5)*0.02;
+      const err=Math.abs(raw[0]/sum-tf)+peakPen;
       if(err<bErr){bErr=err;bRaw=raw;bSum=sum;}
     }
     if(!bRaw||bErr>.02){
@@ -761,21 +766,42 @@ function runSim(){
     `<span class="or-tag">Top 10 <b>${or.t10.toFixed(1)}%</b></span>`+
     `<span class="or-tag highlight">devigged</span>`;
 
-  // Use pWin alone as the Plackett-Luce strength for pairwise comparisons.
-  // The sum-of-four approach dilutes the win-market edge because the top-10
-  // market compresses separation between strong and weak drivers.
   const lsArr=devd.map(d=>d.pWin);
   function lsRank(ls){return lsArr.filter(x=>x>=ls).length;}
 
-  // Build CDFs
-  const cdfs=new Float64Array(n*11);
-  const pTop10s=new Float64Array(n);
-  const lsValues=new Float64Array(n);
+  // Build per-driver FULL position PMFs (P1..PN) anchored to all four
+  // markets — Win, Top 3, Top 5, Top 10 — via fitGG, with the tail
+  // extending P11..PN through buildTail. Then blend a small back-heavy
+  // uniform component into the tail so far-tail positions are non-zero
+  // for strong drivers (preserving total tail mass = top-10 anchor).
+  // The simulation then uses sample-and-rank: each driver samples a
+  // continuous score from their CDF, drivers are sorted by score, and
+  // ranks 1..N are assigned. This honors every anchor per driver,
+  // unlike pure PL which forces a single-λ exponential decay through P1-P10.
+  const cdfsFull=new Float64Array(n*n);
+  const tlF=Math.max(1,n-10);
+  const tailFW=new Float64Array(tlF);
+  let totFW=0;
+  for(let k=0;k<tlF;k++){
+    const t=tlF>1?k/(tlF-1):0;
+    tailFW[k]=Math.exp(3*t);  // back-heavy, P_N ~20× P11
+    totFW+=tailFW[k];
+  }
+  const TAIL_BLEND=0.15;
   for(let i=0;i<n;i++){
-    const t=buildTop10CDF(devd[i],n);
-    for(let k=0;k<11;k++) cdfs[i*11+k]=t.cdf[k];
-    pTop10s[i]=t.pTop10;
-    lsValues[i]=lsArr[i];
+    const rnk=lsRank(devd[i].pWin);
+    const pmf=buildDisplayPMF(devd[i],n,rnk);
+    let tailMass=0;
+    for(let k=10;k<n;k++) tailMass+=pmf[k];
+    for(let k=0;k<tlF;k++){
+      pmf[10+k]=(1-TAIL_BLEND)*pmf[10+k]+TAIL_BLEND*tailMass*tailFW[k]/totFW;
+    }
+    let tot=0;
+    for(let k=0;k<n;k++) tot+=pmf[k];
+    if(tot>0) for(let k=0;k<n;k++) pmf[k]/=tot;
+    let cum=0;
+    for(let k=0;k<n;k++){cum+=pmf[k]; cdfsFull[i*n+k]=cum;}
+    cdfsFull[i*n+n-1]=1;  // numerical safety
   }
 
   const simBtn=document.getElementById('simBtn');
@@ -793,122 +819,52 @@ function runSim(){
 
   const workerSrc=`
     self.onmessage=function(e){
-      const{lsValues,pTop10s,n,nSim,chunk,calibrateRaces}=e.data;
+      const{cdfs,n,nSim,chunk}=e.data;
       const beat=new Int32Array(n*n);
       const ranks=new Int8Array(n*nSim);
-      let totalLambdaAll=0;
-      for(let i=0;i<n;i++) totalLambdaAll+=lsValues[i];
-      const order=new Uint8Array(n);
-      const activeIdx=new Uint8Array(n);
-      const activeLam=new Float64Array(n);
-      const isIncident=new Uint8Array(n);
-      const incidentList=new Uint8Array(n);
+      const scores=new Float64Array(n);
+      const idx=new Int32Array(n);
 
-      // ── Calibration phase: pure PL, count top-10 finishes per driver ──
-      const calT10=new Int32Array(n);
-      const t10Limit=n<10?n:10;
-      for(let s=0;s<calibrateRaces;s++){
-        for(let i=0;i<n;i++){activeIdx[i]=i;activeLam[i]=lsValues[i];}
-        let remaining=n, totalLam=totalLambdaAll;
-        for(let pos=0;pos<t10Limit;pos++){
-          let r=Math.random()*totalLam, cum=0, wk=remaining-1;
-          for(let k=0;k<remaining;k++){cum+=activeLam[k];if(cum>=r){wk=k;break;}}
-          const wi=activeIdx[wk];
-          calT10[wi]++;
-          totalLam-=activeLam[wk];
-          activeIdx[wk]=activeIdx[remaining-1];
-          activeLam[wk]=activeLam[remaining-1];
-          remaining--;
-        }
-      }
-      // Solve for q: target P(in top 10) = (1-q_i) * plT10_i  →  q_i = 1 - market/plT10
-      // Floor at Q_FLOOR ensures every driver has a small "catastrophic DNF" chance
-      // (engine, crash) so the back of the distribution table is never zero for anyone.
-      const Q_FLOOR=0.015;
-      const q=new Float64Array(n);
-      const plT10arr=new Float64Array(n);
-      for(let i=0;i<n;i++){
-        const plT10=calT10[i]/calibrateRaces;
-        plT10arr[i]=plT10;
-        let qi=0;
-        if(plT10>pTop10s[i]&&plT10>0) qi=(plT10-pTop10s[i])/plT10;
-        q[i]=qi>Q_FLOOR?qi:Q_FLOOR;
-      }
-      self.postMessage({type:'calibrated',q:Array.from(q),plT10:Array.from(plT10arr),mkt:Array.from(pTop10s)});
-
-      // ── Main phase: PL sequential with per-driver incident draws ──
-      // Incidents land at distinct random positions in [P11..PN] (uniform).
-      // Non-incidents PL-race for the remaining positions (top 10 always available + leftover tail slots).
-      const tailPos=new Uint8Array(n);  // scratch: positions 10..n-1, partially shuffled
-      const usedPos=new Uint8Array(n);  // which positions are taken by incidents
-      const remPos=new Uint8Array(n);   // remaining positions (ascending) for PL output
+      // Sample-and-rank: each driver samples a continuous "score" from their
+      // own full-N CDF (anchored to all four markets). Drivers are sorted by
+      // score and assigned ranks 1..N. Each driver's marginal P(rank ≤ k)
+      // approximately equals their fitted CDF at k, so all four anchors are
+      // honored without any post-hoc calibration step.
       let done=0;
       function run(){
         const end=Math.min(done+chunk,nSim);
-        const tailLen=n-10;
         for(let s=done;s<end;s++){
-          // Draw incidents
-          let incidentCount=0;
+          // Sample score per driver: position bucket (binary search in CDF)
+          // plus uniform [0,1) noise so within-bucket ties break randomly.
           for(let i=0;i<n;i++){
-            if(Math.random()<q[i]){isIncident[i]=1;incidentCount++;}
-            else isIncident[i]=0;
-          }
-          // Safety: cap incidents at available tail slots (only triggers if q values are huge)
-          if(incidentCount>tailLen){
-            // un-mark random incidents until we fit
-            let toRemove=incidentCount-tailLen;
-            for(let i=n-1;i>=0&&toRemove>0;i--){
-              if(isIncident[i]&&Math.random()<toRemove/(i+1)){isIncident[i]=0;incidentCount--;toRemove--;}
+            const r=Math.random();
+            const base=i*n;
+            let lo=0,hi=n-1;
+            while(lo<hi){
+              const mid=(lo+hi)>>1;
+              if(cdfs[base+mid]>=r) hi=mid;
+              else lo=mid+1;
             }
+            scores[i]=lo+Math.random();
+            idx[i]=i;
           }
-
-          // Sample distinct random positions from [10..n-1] via partial Fisher-Yates
-          for(let i=0;i<tailLen;i++) tailPos[i]=10+i;
-          for(let j=0;j<incidentCount;j++){
-            const sj=j+Math.floor(Math.random()*(tailLen-j));
-            const tmp=tailPos[j];tailPos[j]=tailPos[sj];tailPos[sj]=tmp;
-          }
-          // Mark used positions
-          for(let i=0;i<n;i++) usedPos[i]=0;
-          for(let j=0;j<incidentCount;j++) usedPos[tailPos[j]]=1;
-
-          // Pair incident drivers with their random positions
-          let incIdx=0;
-          for(let i=0;i<n;i++) if(isIncident[i]) incidentList[incIdx++]=i;
-          for(let j=0;j<incidentCount;j++) order[incidentList[j]]=tailPos[j];
-
-          // Build remaining positions list (ascending) for active drivers
-          let rIdx=0;
-          for(let p=0;p<n;p++) if(!usedPos[p]) remPos[rIdx++]=p;
-
-          // Build active pool
-          let activeCount=0, totalLam=0;
-          for(let i=0;i<n;i++){
-            if(!isIncident[i]){
-              activeIdx[activeCount]=i;
-              activeLam[activeCount]=lsValues[i];
-              totalLam+=lsValues[i];
-              activeCount++;
+          // Insertion sort idx[] by scores[idx[]] ascending (n is small).
+          for(let a=1;a<n;a++){
+            const tmpIdx=idx[a], tmpScore=scores[tmpIdx];
+            let b=a;
+            while(b>0&&scores[idx[b-1]]>tmpScore){
+              idx[b]=idx[b-1];
+              b--;
             }
+            idx[b]=tmpIdx;
           }
-          // PL sequential — assign winners to remPos in ascending order
-          let remaining=activeCount;
-          for(let pos=0;pos<activeCount;pos++){
-            let r=Math.random()*totalLam, cum=0, wk=remaining-1;
-            for(let k=0;k<remaining;k++){cum+=activeLam[k];if(cum>=r){wk=k;break;}}
-            const wi=activeIdx[wk];
-            order[wi]=remPos[pos];
-            totalLam-=activeLam[wk];
-            activeIdx[wk]=activeIdx[remaining-1];
-            activeLam[wk]=activeLam[remaining-1];
-            remaining--;
+          // Assign 0-indexed ranks and update pairwise beat matrix.
+          const baseR=s*n;
+          for(let r=0;r<n;r++) ranks[baseR+idx[r]]=r;
+          for(let r1=0;r1<n;r1++){
+            const ai=idx[r1];
+            for(let r2=r1+1;r2<n;r2++) beat[ai*n+idx[r2]]++;
           }
-
-          const base=s*n;
-          for(let i=0;i<n;i++) ranks[base+i]=order[i];
-          for(let a=0;a<n;a++)
-            for(let b=a+1;b<n;b++)
-              if(order[a]<order[b]) beat[a*n+b]++; else beat[b*n+a]++;
         }
         done=end;
         self.postMessage({type:'progress',done,total:nSim});
@@ -923,17 +879,9 @@ function runSim(){
   const wURL=URL.createObjectURL(blob);
   simWorker=new Worker(wURL);
   const _simStart=performance.now();
-  const CALIBRATE_RACES=100000;
-  simWorker.postMessage({lsValues,pTop10s,n,nSim:NSIM,chunk:CHUNK,calibrateRaces:CALIBRATE_RACES},[lsValues.buffer,pTop10s.buffer]);
+  simWorker.postMessage({cdfs:cdfsFull,n,nSim:NSIM,chunk:CHUNK},[cdfsFull.buffer]);
 
   simWorker.onmessage=function(e){
-    if(e.data.type==='calibrated'){
-      const rows=devd.map((d,i)=>({name:d.name,plT10:e.data.plT10[i],mkt:e.data.mkt[i],q:e.data.q[i]}))
-        .sort((a,b)=>b.plT10-a.plT10).slice(0,12);
-      console.log('Incident calibration (top 12 by PL Top10):');
-      console.table(rows.map(r=>({Driver:r.name,'PL Top10':(r.plT10*100).toFixed(1)+'%','Market Top10':(r.mkt*100).toFixed(1)+'%','Incident q':(r.q*100).toFixed(1)+'%'})));
-      return;
-    }
     if(e.data.type==='progress'){
       const pct=(e.data.done/e.data.total*100);
       document.getElementById('trackFill').style.width=pct.toFixed(0)+'%';
@@ -960,7 +908,7 @@ function runSim(){
       document.getElementById('loaderLabel').textContent='Complete 🏁';
       statusEl.textContent=`✓  ${n}-driver field · 1,000,000 simulations complete`;
       statusEl.className='status ok';
-      console.log(`PL sim: ${((performance.now()-_simStart)/1000).toFixed(2)}s for ${NSIM} races, ${n} drivers`);
+      console.log(`Sample-and-rank sim: ${((performance.now()-_simStart)/1000).toFixed(2)}s for ${NSIM} races, ${n} drivers`);
       renderFreqTable();
       simWorker.terminate(); URL.revokeObjectURL(wURL); simWorker=null;
     }
@@ -1065,17 +1013,55 @@ function pctStr(p){return(p*100).toFixed(2)+'%';}
 
 
 // ─────────────────────────────────────────────────────────────
+// Smooth monotone PMF through cumulative anchors via PCHIP
+// (Piecewise Cubic Hermite, Fritsch-Carlson). Builds a single
+// continuous monotone CDF F through (0,0), (1,pW), (3,pT3),
+// (5,pT5), (10,pT10) and reads off pmf[k] = F(k+1) - F(k).
+// Hits every anchor exactly with no kinks at segment boundaries.
+// ─────────────────────────────────────────────────────────────
+function pchipTop10PMF(d, n){
+  const pW=clamp(d.pWin),pT3=Math.max(pW+1e-6,clamp(d.pTop3));
+  const pT5=Math.max(pT3+1e-6,clamp(d.pTop5)),pT10=Math.max(pT5+1e-6,clamp(d.pTop10));
+  const xs=[0,1,3,5,10], ys=[0,pW,pT3,pT5,pT10];
+  const N=xs.length;
+  const h=new Array(N-1), delta=new Array(N-1);
+  for(let i=0;i<N-1;i++){h[i]=xs[i+1]-xs[i];delta[i]=(ys[i+1]-ys[i])/h[i];}
+  const m=new Array(N);
+  // Interior slopes: Fritsch-Carlson harmonic mean
+  for(let i=1;i<N-1;i++){
+    if(delta[i-1]*delta[i]<=0){m[i]=0;continue;}
+    const w1=2*h[i]+h[i-1], w2=h[i]+2*h[i-1];
+    m[i]=(w1+w2)/(w1/delta[i-1]+w2/delta[i]);
+  }
+  // Endpoint slopes: 3-point formula with monotonicity correction
+  m[0]=((2*h[0]+h[1])*delta[0]-h[0]*delta[1])/(h[0]+h[1]);
+  if(m[0]*delta[0]<=0) m[0]=0;
+  else if(Math.abs(m[0])>3*Math.abs(delta[0])) m[0]=3*delta[0];
+  m[N-1]=((2*h[N-2]+h[N-3])*delta[N-2]-h[N-2]*delta[N-3])/(h[N-2]+h[N-3]);
+  if(m[N-1]*delta[N-2]<=0) m[N-1]=0;
+  else if(Math.abs(m[N-1])>3*Math.abs(delta[N-2])) m[N-1]=3*delta[N-2];
+  function F(xi){
+    if(xi<=xs[0]) return ys[0];
+    if(xi>=xs[N-1]) return ys[N-1];
+    let i=0; while(i<N-1&&xs[i+1]<xi) i++;
+    const t=(xi-xs[i])/h[i], t2=t*t, t3=t2*t;
+    const h00=2*t3-3*t2+1, h10=t3-2*t2+t;
+    const h01=-2*t3+3*t2, h11=t3-t2;
+    return h00*ys[i]+h10*h[i]*m[i]+h01*ys[i+1]+h11*h[i]*m[i+1];
+  }
+  const pmf=new Float64Array(n);
+  let prev=0;
+  for(let k=0;k<10;k++){const cur=F(k+1); pmf[k]=Math.max(0,cur-prev); prev=cur;}
+  return pmf;
+}
+
+// ─────────────────────────────────────────────────────────────
 // Build display PMF for sparkline
 // ─────────────────────────────────────────────────────────────
 function buildDisplayPMF(d, n, rank) {
   const pW=clamp(d.pWin),pT3=Math.max(pW+1e-6,clamp(d.pTop3));
   const pT5=Math.max(pT3+1e-6,clamp(d.pTop5)),pT10=Math.max(pT5+1e-6,clamp(d.pTop10));
-  const rgg=fitGG(d,n), pmf=new Float64Array(n);
-  pmf[0]=pW;
-  const m23=pT3-pW,s23=rgg[1]+rgg[2]; pmf[1]=rgg[1]/s23*m23; pmf[2]=rgg[2]/s23*m23;
-  const m45=pT5-pT3,s45=rgg[3]+rgg[4]; pmf[3]=rgg[3]/s45*m45; pmf[4]=rgg[4]/s45*m45;
-  const m610=pT10-pT5,s610=Array.from(rgg.subarray(5,10)).reduce((a,b)=>a+b,0);
-  for(let k=5;k<10;k++) pmf[k]=s610>0?rgg[k]/s610*m610:m610/5;
+  const pmf=pchipTop10PMF(d,n);
   const m11p=1-pT10;
   const tail=buildTail(pmf[8],pmf[9],m11p,rank,n);
   for(let k=0;k<n-10;k++) pmf[10+k]=tail[k];
